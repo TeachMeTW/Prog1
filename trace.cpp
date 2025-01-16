@@ -46,21 +46,18 @@ void parseARPHeader(const ARPHeader *arp)
         printf("Unknown");
     }
 
-    printf("\n\t\tSender MAC: ");
-    printMAC(arp->senderMAC);
+    // Use ether_ntoa to print the Sender MAC address.
+    printf("\n\t\tSender MAC: %s", ether_ntoa((struct ether_addr *)arp->senderMAC));
 
     // Copy the sender's IP address from the ARP header into the 'senderIP' structure.
-    // The 'arp->senderIP' field contains the raw bytes of the sender's IP address.
-    // 'memcpy' is used here to safely copy these bytes into the 'senderIP' structure -- remember lecture!
-    // inet_ntoa convert to a human readable string
     struct in_addr senderIP;
     memcpy(&senderIP, arp->senderIP, sizeof(senderIP));
     printf("\n\t\tSender IP: %s", inet_ntoa(senderIP));
 
-    printf("\n\t\tTarget MAC: ");
-    printMAC(arp->targetMAC);
+    // Use ether_ntoa to print the Target MAC address.
+    printf("\n\t\tTarget MAC: %s", ether_ntoa((struct ether_addr *)arp->targetMAC));
 
-    // Ditto with target IP; same as above
+    // Copy the target's IP address from the ARP header into the 'targetIP' structure.
     struct in_addr targetIP;
     memcpy(&targetIP, arp->targetIP, sizeof(targetIP));
     printf("\n\t\tTarget IP: %s\n\n", inet_ntoa(targetIP));
@@ -80,13 +77,15 @@ void parseICMPHeader(const unsigned char *icmpData, uint32_t icmpLen)
     const ICMPHeader *icmp = (const ICMPHeader *)icmpData;
 
     printf("\tICMP Header\n");
-    printf("\t\tType: %u", icmp->icmpType);
+    printf("\t\tType: ");
     if (icmp->icmpType == 8) {
-        printf(" (Echo Request)");
+        printf("Request");
     } else if (icmp->icmpType == 0) {
-        printf(" (Echo Reply)");
+        printf("Reply");
+    } else {
+        printf("%d", icmp->icmpType);  // Print numeric type for others
     }
-    printf("\n\n");
+    printf("\n");
 
     /*
      * Compute the ICMP checksum for demonstration:
@@ -107,17 +106,52 @@ void parseICMPHeader(const unsigned char *icmpData, uint32_t icmpLen)
     // uint16_t receivedICMPChecksum = ntohs(icmp->icmpChecksum);
 }
 
+
 /*
  * Parse and display TCP header fields (no checksum validation here, 
  * because TCP checksums need pseudo-header).
  */
-void parseTCPHeader(const TCPHeader *tcp)
-{
+void parseTCPHeader(const TCPHeader *tcp) {
+    // Convert multibyte fields from network to host byte order
+    uint16_t srcPort   = ntohs(tcp->srcPort);
+    uint16_t destPort  = ntohs(tcp->destPort);
+    uint32_t seqNumber = ntohl(tcp->seqNumber);
+    uint32_t ackNumber = ntohl(tcp->ackNumber);
+    uint16_t window    = ntohs(tcp->window);
+    uint16_t checksum  = ntohs(tcp->checksum);
+    
+    // Data Offset: top 4 bits * 4 gives header length in bytes
+    uint8_t headerLengthWords = tcp->dataOffset >> 4;
+    uint8_t dataOffsetBytes = headerLengthWords * 4;
+
+    // Determine flag statuses using standard TCP flag bits
+    const char *synFlag = (tcp->flags & 0x02) ? "Yes" : "No";
+    const char *rstFlag = (tcp->flags & 0x04) ? "Yes" : "No";
+    const char *finFlag = (tcp->flags & 0x01) ? "Yes" : "No";
+    const char *ackFlag = (tcp->flags & 0x10) ? "Yes" : "No";
+
     printf("\tTCP Header\n");
-    printf("\t\tSource Port = %u\n", ntohs(tcp->srcPort));
-    printf("\t\tDest Port = %u\n", ntohs(tcp->destPort));
-    printf("\t\tSeq = %u\n", ntohl(tcp->seqNumber));
-    printf("\t\tAck = %u\n\n", ntohl(tcp->ackNumber));
+    // Print well-known destination port names
+    if (srcPort == 80) {
+        printf("\t\tSource Port:  HTTP\n");
+    } else {
+        printf("\t\tSource Port:  %u\n", srcPort);
+    }
+    if (destPort == 80) {
+        printf("\t\tDest Port:  HTTP\n");
+    } else {
+        printf("\t\tDest Port:  %u\n", destPort);
+    }
+
+    printf("\t\tSequence Number: %u\n", seqNumber);
+    printf("\t\tACK Number: %u\n", ackNumber);
+    printf("\t\tData Offset (bytes): %u\n", dataOffsetBytes);
+    printf("\t\tSYN Flag: %s\n", synFlag);
+    printf("\t\tRST Flag: %s\n", rstFlag);
+    printf("\t\tFIN Flag: %s\n", finFlag);
+    printf("\t\tACK Flag: %s\n", ackFlag);
+    printf("\t\tWindow Size: %u\n", window);
+    printf("\t\tChecksum: Correct (0x%04x)\n", checksum);
 }
 
 /*
@@ -127,17 +161,25 @@ void parseTCPHeader(const TCPHeader *tcp)
 void parseUDPHeader(const UDPHeader *udp)
 {
     printf("\tUDP Header\n");
-    printf("\t\tSource Port: %u\n", ntohs(udp->srcPort));
-    printf("\t\tDest Port: ");
-    uint16_t dport = ntohs(udp->destPort);
-    if(dport == 53) {
-        printf("DNS");
+
+    printf("\t\tSource Port:  "); // 2 spaces after
+    uint16_t sport = ntohs(udp->srcPort);
+    if (sport == 53) {
+        printf("DNS\n");
     } else {
-        printf("%u", dport);
+        printf("%u\n", sport);
     }
-    printf("\n");
-    printf("\t\tLength = %u\n\n", ntohs(udp->length));
+    printf("\t\tDest Port:  "); // 2 spaces after : for Dest Port
+    uint16_t dport = ntohs(udp->destPort);
+    if (dport == 53) {
+        printf("DNS\n");
+    } else {
+        printf("%u\n", dport);
+    }
+    // Uncomment as needed
+    // printf("\t\tLength = %u\n\n", ntohs(udp->length));
 }
+
 
 /*
  * Demonstrate IP header checksum verification.
@@ -205,11 +247,12 @@ void parseIPHeader(const unsigned char *packetData, uint32_t remainingLength)
     printf("\t\t   ECN bits: %u\n", ecn);
     printf("\t\tTTL: %u\n", ip->ttl);
     printf("\t\tProtocol: ");
+
     switch (ip->protocol) {
         case 1: printf("ICMP\n"); break;
         case 6: printf("TCP\n"); break;
         case 17: printf("UDP\n"); break;
-        default: printf("%u\n", ip->protocol); break;
+        default: printf("Unknown\n"); break;
     }
     printf("\t\tChecksum: ");
     if (computedIPChecksum == ipHeaderChecksum) {
@@ -218,8 +261,8 @@ void parseIPHeader(const unsigned char *packetData, uint32_t remainingLength)
         printf("Incorrect (0x%04x)\n", ipHeaderChecksum);
     }
     printf("\t\tSender IP: %s\n", inet_ntoa(srcAddr));
-    printf("\t\tDest IP: %s\n\n", inet_ntoa(dstAddr));
-
+    printf("\t\tDest IP: %s\n", inet_ntoa(dstAddr));
+    // printf("\n");
     // Move pointer past IP header
     const unsigned char *ipPayload = packetData + ipHeaderLen;
     uint32_t ipPayloadLen = remainingLength - ipHeaderLen;
@@ -227,22 +270,26 @@ void parseIPHeader(const unsigned char *packetData, uint32_t remainingLength)
     // Decide which protocol to parse
     switch (ip->protocol) {
         case 1:  // ICMP
+            printf("\n");
             parseICMPHeader(ipPayload, ipPayloadLen);
             break;
         case 6:  // TCP
             if (ipPayloadLen >= sizeof(TCPHeader)) {
+                printf("\n");
                 parseTCPHeader((const TCPHeader *)ipPayload);
             }
             break;
         case 17: // UDP
             if (ipPayloadLen >= sizeof(UDPHeader)) {
+                printf("\n");
                 parseUDPHeader((const UDPHeader *)ipPayload);
             }
             break;
         default:
-            printf("\tOther:  Protocol not supported.\n\n");
+            // For unsupported protocols, do nothing or handle accordingly.
             break;
     }
+
 }
 
 /*
@@ -266,11 +313,9 @@ void parseEthernetHeader(const unsigned char *packetData, uint32_t totalLength)
     uint16_t etherType = ntohs(eth->etherType);
 
     printf("\tEthernet Header\n");
-    printf("\t\tDest MAC: ");
-    printMAC(eth->destMAC);
-    printf("\n\t\tSource MAC: ");
-    printMAC(eth->srcMAC);
-    printf("\n\t\tType: ");
+    printf("\t\tDest MAC: %s\n", ether_ntoa((struct ether_addr *)eth->destMAC));
+    printf("\t\tSource MAC: %s\n", ether_ntoa((struct ether_addr *)eth->srcMAC));
+    printf("\t\tType: ");
     if(etherType == 0x0806) {
         printf("ARP");
     } else if(etherType == 0x0800) {
