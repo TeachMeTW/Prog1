@@ -8,7 +8,7 @@
  * Contains hardware type, protocol type, hardware size, protocol size, operation,
  * sender MAC/IP, and target MAC/IP.
  */
-struct ARPHeader
+struct __attribute__((packed)) ARPHeader
 {
     uint16_t hType;      // Use ntohs()
     uint16_t pType;      // Use ntohs()

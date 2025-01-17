@@ -7,7 +7,7 @@
  * Parse the Ethernet header from the packet.
  * Contains the destination MAC address, source MAC address, and the etherType field.
  */
-struct EthernetHeader
+struct __attribute__((packed)) EthernetHeader
 {
     uint8_t  destMAC[6];
     uint8_t  srcMAC[6];

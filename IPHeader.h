@@ -8,7 +8,7 @@
  * Contains version/IHL, type of service, total length, identification, flags/fragment offset,
  * time to live, protocol, header checksum, source IP, and destination IP.
  */
-struct IPHeader
+struct __attribute__((packed)) IPHeader
 {
     uint8_t  versionIHL;      // version (4 bits) + IHL (4 bits)
     uint8_t  typeOfService;

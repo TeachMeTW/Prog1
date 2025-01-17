@@ -8,8 +8,7 @@
  * Contains source port, destination port, sequence number, acknowledgment number,
  * offset/reserved, flags, window size, checksum, urgent pointer.
  */
-struct TCPHeader
-{
+struct __attribute__((packed)) TCPHeader {
     uint16_t srcPort;        // Use ntohs()
     uint16_t destPort;       // Use ntohs()
     uint32_t seqNumber;      // Use ntohl()
