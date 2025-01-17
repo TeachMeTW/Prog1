@@ -11,13 +11,21 @@ OBJS = trace.o checksum.o
 
 TARGET = trace
 
+# Detect OS and set the source file for trace accordingly
+ifeq ($(shell uname -s),Darwin)
+    TRACE_SRC = trace_mac.cpp
+else
+    TRACE_SRC = trace_linux.cpp
+endif
+
 all: $(TARGET)
 
 $(TARGET): $(OBJS)
 	$(CXX) $(CXXFLAGS) -o $(TARGET) $(OBJS) $(LDFLAGS)
 
-trace.o: trace.cpp EthernetHeader.h ARPHeader.h IPHeader.h ICMPHeader.h TCPHeader.h UDPHeader.h checksum.h
-	$(CXX) $(CXXFLAGS) -c trace.cpp
+# Compile trace.o from the appropriate source based on OS
+trace.o: $(TRACE_SRC) EthernetHeader.h ARPHeader.h IPHeader.h ICMPHeader.h TCPHeader.h UDPHeader.h checksum.h
+	$(CXX) $(CXXFLAGS) -c $(TRACE_SRC) -o trace.o
 
 checksum.o: checksum.c checksum.h
 	$(CC) $(CFLAGS) -c checksum.c
