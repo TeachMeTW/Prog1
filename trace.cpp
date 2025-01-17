@@ -173,7 +173,7 @@ void parseTCPHeader(const TCPHeader *tcp, uint32_t srcIP, uint32_t destIP, uint3
         printf("Correct (0x%04x)\n", receivedChecksum);
     } else {
         // Fixed format string to accommodate two arguments
-        printf("Incorrect (0x%04x, computed 0x%04x)\n", receivedChecksum, computedChecksum);
+        printf("Incorrect (0x%04x)\n", receivedChecksum, computedChecksum);
     }
     // --- End TCP Checksum Validation ---
 }
