@@ -16,6 +16,13 @@
 #include "UDPHeader.h"
 #include "checksum.h"
 
+struct __attribute__((packed)) pseudo_header {
+    uint32_t src_addr;
+    uint32_t dst_addr;
+    uint8_t  zero;
+    uint8_t  protocol;
+    uint16_t tcp_length;
+};
 /*
  * Print a MAC address in the format xx:xx:xx:xx:xx:xx.
  */
@@ -111,20 +118,18 @@ void parseICMPHeader(const unsigned char *icmpData, uint32_t icmpLen)
  * Parse and display TCP header fields (no checksum validation here, 
  * because TCP checksums need pseudo-header).
  */
-void parseTCPHeader(const TCPHeader *tcp) {
-    // Convert multibyte fields from network to host byte order
+void parseTCPHeader(const TCPHeader *tcp, uint32_t srcIP, uint32_t destIP, uint32_t tcpSegmentLength) {
+    // Convert multibyte fields from network to host byte order for display
     uint16_t srcPort   = ntohs(tcp->srcPort);
     uint16_t destPort  = ntohs(tcp->destPort);
     uint32_t seqNumber = ntohl(tcp->seqNumber);
     uint32_t ackNumber = ntohl(tcp->ackNumber);
     uint16_t window    = ntohs(tcp->window);
-    uint16_t checksum  = ntohs(tcp->checksum);
+    uint16_t receivedChecksum = ntohs(tcp->checksum);
     
-    // Data Offset: top 4 bits * 4 gives header length in bytes
     uint8_t headerLengthWords = tcp->dataOffset >> 4;
     uint8_t dataOffsetBytes = headerLengthWords * 4;
 
-    // Determine flag statuses using standard TCP flag bits
     const char *synFlag = (tcp->flags & 0x02) ? "Yes" : "No";
     const char *rstFlag = (tcp->flags & 0x04) ? "Yes" : "No";
     const char *finFlag = (tcp->flags & 0x01) ? "Yes" : "No";
@@ -151,7 +156,40 @@ void parseTCPHeader(const TCPHeader *tcp) {
     printf("\t\tFIN Flag: %s\n", finFlag);
     printf("\t\tACK Flag: %s\n", ackFlag);
     printf("\t\tWindow Size: %u\n", window);
-    printf("\t\tChecksum: Correct (0x%04x)\n", checksum);
+
+    // --- Begin TCP Checksum Validation ---
+    struct pseudo_header psh;
+    psh.src_addr   = srcIP;
+    psh.dst_addr   = destIP;
+    psh.zero       = 0;
+    psh.protocol   = 6;  // TCP protocol number
+    psh.tcp_length = htons((uint16_t)tcpSegmentLength);
+
+    size_t totalLen = sizeof(psh) + tcpSegmentLength;
+    size_t paddedLen = (totalLen % 2 == 0) ? totalLen : totalLen + 1;
+
+    unsigned char *buffer = (unsigned char *)calloc(1, paddedLen);
+    if (!buffer) {
+        perror("calloc");
+        return;
+    }
+
+    memcpy(buffer, &psh, sizeof(psh));
+    memcpy(buffer + sizeof(psh), tcp, tcpSegmentLength);
+
+    TCPHeader *tcpCopy = (TCPHeader *)(buffer + sizeof(psh));
+    tcpCopy->checksum = 0;
+
+    unsigned short computedChecksum = ntohs(in_cksum((unsigned short *)buffer, paddedLen));
+    free(buffer);
+
+    printf("\t\tChecksum: ");
+    if (computedChecksum == receivedChecksum) {
+        printf("Correct (0x%04x)\n", receivedChecksum);
+    } else {
+        printf("Incorrect (0x%04x)\n", receivedChecksum, computedChecksum);
+    }
+    // --- End TCP Checksum Validation ---
 }
 
 /*
@@ -276,7 +314,11 @@ void parseIPHeader(const unsigned char *packetData, uint32_t remainingLength)
         case 6:  // TCP
             if (ipPayloadLen >= sizeof(TCPHeader)) {
                 printf("\n");
-                parseTCPHeader((const TCPHeader *)ipPayload);
+                uint16_t ipTotalLength = ntohs(ip->totalLength);
+                if (ipTotalLength >= ipHeaderLen) {
+                    uint32_t tcpSegmentLength = ipTotalLength - ipHeaderLen;
+                    parseTCPHeader((const TCPHeader *)ipPayload, ip->srcIP, ip->destIP, tcpSegmentLength);
+                }
             }
             break;
         case 17: // UDP

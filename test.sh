@@ -1,5 +1,18 @@
 #!/bin/bash
 
+# Perform a clean build
+echo "Performing make clean ..."
+make clean
+
+echo "Performing make ..."
+make
+
+# Check if make was successful
+if [ $? -ne 0 ]; then
+    echo "Build failed. Exiting."
+    exit 1
+fi
+
 # Loop over each .pcap file in trace_files directory
 for pcap in trace_files/*.pcap; do
     # Extract base name without extension
@@ -20,7 +33,10 @@ for pcap in trace_files/*.pcap; do
     else
         echo "Test for ${base}: FAILED"
         echo "Differences (with line numbers):"
-        diff -u "$test_output" "$expected"
+        # Customize the diff output
+        diff -u "$test_output" "$expected" | sed \
+            -e 's/^+/\tactual: /' \
+            -e 's/^-/\texpected: /'
     fi
     
     echo # Print an empty line for readability
