@@ -7,6 +7,7 @@
 #include <net/ethernet.h>
 #include <netinet/if_ether.h>
 #include <netinet/ip.h>
+#include <netinet/ether.h>
 
 #include "EthernetHeader.h"
 #include "ARPHeader.h"
@@ -171,7 +172,8 @@ void parseTCPHeader(const TCPHeader *tcp, uint32_t srcIP, uint32_t destIP, uint3
     if (computedChecksum == receivedChecksum) {
         printf("Correct (0x%04x)\n", receivedChecksum);
     } else {
-        printf("Incorrect (0x%04x)\n", receivedChecksum, computedChecksum);
+        // Fixed format string to accommodate two arguments
+        printf("Incorrect (0x%04x, computed 0x%04x)\n", receivedChecksum, computedChecksum);
     }
     // --- End TCP Checksum Validation ---
 }
