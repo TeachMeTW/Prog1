@@ -1,14 +1,14 @@
-#ifndef PSEUDOHEADER_H
-#define PSEUDOHEADER_H
+#ifndef PSEUDO_HEADER_H
+#define PSEUDO_HEADER_H
 
 #include <stdint.h>
 
-typedef struct {
-    uint32_t srcIP;      // Source IP address
-    uint32_t destIP;     // Destination IP address
-    uint8_t reserved;    // Reserved field (always 0)
-    uint8_t protocol;    // Protocol type (TCP = 6)
-    uint16_t tcpLength;  // Length of the TCP header and data
-} PseudoHeader;
+struct __attribute__((packed)) pseudo_header {
+    uint32_t src_addr;
+    uint32_t dst_addr;
+    uint8_t  zero;
+    uint8_t  protocol;
+    uint16_t tcp_length;
+};
 
 #endif

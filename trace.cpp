@@ -15,22 +15,7 @@
 #include "TCPHeader.h"
 #include "UDPHeader.h"
 #include "checksum.h"
-
-struct __attribute__((packed)) pseudo_header {
-    uint32_t src_addr;
-    uint32_t dst_addr;
-    uint8_t  zero;
-    uint8_t  protocol;
-    uint16_t tcp_length;
-};
-/*
- * Print a MAC address in the format xx:xx:xx:xx:xx:xx.
- */
-void printMAC(const uint8_t *mac)
-{
-    printf("%02x:%02x:%02x:%02x:%02x:%02x",
-           mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-}
+#include "PseudoHeader.h"
 
 /*
  * Parse and display ARP header fields.
@@ -71,8 +56,7 @@ void parseARPHeader(const ARPHeader *arp)
 }
 
 /*
- * Demonstrate ICMP checksum verification. The ICMP header's checksum
- * typically covers the entire ICMP message (header + data).
+ * Parse and Display ICMP
  */
 void parseICMPHeader(const unsigned char *icmpData, uint32_t icmpLen)
 {
@@ -110,13 +94,12 @@ void parseICMPHeader(const unsigned char *icmpData, uint32_t icmpLen)
     computedCsum = ntohs(computedCsum);
     
     free(icmpCopy);
-    // uint16_t receivedICMPChecksum = ntohs(icmp->icmpChecksum);
+    // Well it doesnt seem we're using it according to the sheet so lets skip
 }
 
 
 /*
- * Parse and display TCP header fields (no checksum validation here, 
- * because TCP checksums need pseudo-header).
+ * Parse and display TCP header fields
  */
 void parseTCPHeader(const TCPHeader *tcp, uint32_t srcIP, uint32_t destIP, uint32_t tcpSegmentLength) {
     // Convert multibyte fields from network to host byte order for display
@@ -157,6 +140,7 @@ void parseTCPHeader(const TCPHeader *tcp, uint32_t srcIP, uint32_t destIP, uint3
     printf("\t\tACK Flag: %s\n", ackFlag);
     printf("\t\tWindow Size: %u\n", window);
 
+    // FOR EASIER DEBUGGING!!! THIS BREAKS ALWAYS?
     // --- Begin TCP Checksum Validation ---
     struct pseudo_header psh;
     psh.src_addr   = srcIP;
@@ -193,29 +177,68 @@ void parseTCPHeader(const TCPHeader *tcp, uint32_t srcIP, uint32_t destIP, uint3
 }
 
 /*
- * Parse and display UDP header fields (no checksum validation here, 
- * because UDP checksums need pseudo-header).
+ * Parse and display UDP header fields
  */
-void parseUDPHeader(const UDPHeader *udp)
+void parseUDPHeader(const UDPHeader *udp, uint32_t srcIP, uint32_t destIP, uint32_t udpSegmentLength)
 {
     printf("\tUDP Header\n");
 
-    printf("\t\tSource Port:  "); // 2 spaces after
+    // Convert multibyte fields from network to host order for display
     uint16_t sport = ntohs(udp->srcPort);
+    uint16_t dport = ntohs(udp->destPort);
+    uint16_t receivedChecksum = ntohs(udp->checksum);
+
+    printf("\t\tSource Port:  ");
     if (sport == 53) {
         printf("DNS\n");
     } else {
         printf("%u\n", sport);
     }
-    printf("\t\tDest Port:  "); // 2 spaces after : for Dest Port
-    uint16_t dport = ntohs(udp->destPort);
+
+    printf("\t\tDest Port:  ");
     if (dport == 53) {
         printf("DNS\n");
     } else {
         printf("%u\n", dport);
     }
-    // Uncomment as needed
-    // printf("\t\tLength = %u\n\n", ntohs(udp->length));
+
+    // --- Begin UDP Checksum Validation ---
+    struct pseudo_header psh;
+    psh.src_addr   = srcIP;
+    psh.dst_addr   = destIP;
+    psh.zero       = 0;
+    psh.protocol   = 17;  // UDP protocol number
+    psh.tcp_length = htons((uint16_t)udpSegmentLength);  // same field reused for UDP length
+
+    size_t totalLen = sizeof(psh) + udpSegmentLength;
+    size_t paddedLen = (totalLen % 2 == 0) ? totalLen : totalLen + 1;
+
+    unsigned char *buffer = (unsigned char *)calloc(1, paddedLen);
+    if (!buffer) {
+        perror("calloc");
+        return;
+    }
+
+    memcpy(buffer, &psh, sizeof(psh));
+    memcpy(buffer + sizeof(psh), udp, udpSegmentLength);
+
+    // Zero out the checksum field in the copied UDP header within the buffer
+    UDPHeader *udpCopy = (UDPHeader *)(buffer + sizeof(psh));
+    udpCopy->checksum = 0;
+
+    unsigned short computedChecksum = ntohs(in_cksum((unsigned short *)buffer, paddedLen));
+    free(buffer);
+
+    // The outfiles dont need this? even tho the doc said:
+    // UDP checksums would be checked
+
+    // printf("\t\tChecksum: ");
+    // if (computedChecksum == receivedChecksum) {
+    //     printf("Correct (0x%04x)\n", receivedChecksum);
+    // } else {
+    //     printf("Incorrect (expected 0x%04x, computed 0x%04x)\n", receivedChecksum, computedChecksum);
+    // }
+    // --- End UDP Checksum Validation ---
 }
 
 
@@ -316,6 +339,7 @@ void parseIPHeader(const unsigned char *packetData, uint32_t remainingLength)
                 printf("\n");
                 uint16_t ipTotalLength = ntohs(ip->totalLength);
                 if (ipTotalLength >= ipHeaderLen) {
+                    // WE NEED THIS OR ELSE IT POOPS OUT!!
                     uint32_t tcpSegmentLength = ipTotalLength - ipHeaderLen;
                     parseTCPHeader((const TCPHeader *)ipPayload, ip->srcIP, ip->destIP, tcpSegmentLength);
                 }
@@ -324,9 +348,14 @@ void parseIPHeader(const unsigned char *packetData, uint32_t remainingLength)
         case 17: // UDP
             if (ipPayloadLen >= sizeof(UDPHeader)) {
                 printf("\n");
-                parseUDPHeader((const UDPHeader *)ipPayload);
+                uint16_t ipTotalLength = ntohs(ip->totalLength);
+                if (ipTotalLength >= ipHeaderLen) {
+                    uint32_t udpSegmentLength = ipTotalLength - ipHeaderLen;
+                    parseUDPHeader((const UDPHeader *)ipPayload, ip->srcIP, ip->destIP, udpSegmentLength);
+                }
             }
             break;
+
         default:
             // For unsupported protocols, do nothing or handle accordingly.
             break;
